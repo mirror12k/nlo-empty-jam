@@ -821,6 +821,15 @@ ParticleService.prototype.draw_particle = function(px, py, amount=1) {
 	ctx.fillStyle = '#fff4';
 	ctx.fillRect(px - 6, py - 6 - ++i*5, 12,12);
 };
+ParticleService.prototype.draw_image = function(img, px, py, sx, sy, amount=1) {
+	var i = 0;
+	var ctx = this.buffer_canvas.getContext('2d');
+	ctx.globalAlpha = amount / 4;
+	ctx.save();
+	ctx.translate(px, py);
+	ctx.drawImage(img, -sx / 2, -sy / 2, sx, sy);
+	ctx.restore();
+};
 ParticleService.prototype.draw_splash = function(px, py, amount=1) {
 	var i = 0;
 	var dirs = [1,1,1,1].map(i => unit_mul(rand_vector(), 10 + Math.random() * 25));
@@ -962,13 +971,17 @@ Button.prototype.update = function (game) {
 	}
 };
 
-function TriColorEntity(px, py, sx, sy, image) {
+function TriColorEntity(px, py, sx, sy, image,
+		light_color='#fff',
+		backing_color='#a91337',
+		shadow_color='#040b20') {
+
 	ScreenEntity.call(this, game, px, py, sx, sy, image);
 
 	this.light_amount = 1;
-	this.light_color = '#fff';
-	this.backing_color = '#a91337';
-	this.shadow_color = '#040b20';
+	this.light_color = light_color;
+	this.backing_color = backing_color;
+	this.shadow_color = shadow_color;
 
 	this.color_timer = Math.random() * Math.PI * 2;
 	this.shake_amount = 0;
@@ -1065,8 +1078,11 @@ TriColorEntity.prototype.render_color = function(c, color) {
 	return c;
 };
 
-function AnimatedColorEntity(px, py, sx, sy, base_image, moving_image) {
-	TriColorEntity.call(this, px, py, sx, sy, base_image);
+function AnimatedColorEntity(px, py, sx, sy, base_image, moving_image,
+		light_color='#fff',
+		backing_color='#a91337',
+		shadow_color='#040b20') {
+	TriColorEntity.call(this, px, py, sx, sy, base_image, light_color, backing_color, shadow_color);
 	this.base_image = this.image;
 	this.alt_image = moving_image;
 
@@ -1116,7 +1132,8 @@ AnimatedColorEntity.prototype.update = function (game) {
 
 			this.moving_timer = 0;
 
-			game.services.sound_service.play_sound(game.audio.step, this.light_amount, 3);
+			if (this.leaves_footprints)
+				game.services.sound_service.play_sound(game.audio.step, this.light_amount, 3);
 		}
 	} else {
 		this.moving_timer = 0;
@@ -1127,12 +1144,249 @@ AnimatedColorEntity.prototype.update = function (game) {
 	}
 };
 
+function HealthyEntity(px, py, sx, sy, base_image, moving_image) {
+	AnimatedColorEntity.call(this, px, py, sx, sy, base_image, moving_image);
+
+	this.type_tag = 'healthy';
+
+	this.speed = 100;
+	this.health = 10;
+	this.atk = 2;
+	this.def = 0;
+	this.state = 'idle';
+
+	this.attack_type = 'echo';
+	this.attack_tags = ['player'];
+	this.anger_chance = 0.2;
+	this.attack_range = this.width;
+
+	this.fire_cooldown = 0.5;
+	this.fire_timer = 0;
+
+	this.souls = Math.floor(Math.random() * 2);
+
+	var period = 3;
+	this.every(period - Math.random() * period * 0.5, () => {
+		if (this.state === 'agro') {
+			if (this.target.active && Math.random() < (1 - this.anger_chance)) {
+				var d = this.target.px !== this.px || this.target.py !== this.py
+						? unit_mul(unit_delta(this, this.target), this.speed)
+						: p_zero;
+				this.vx = d.px;
+				this.vy = d.py;
+			} else {
+				this.state = 'idle';
+				this.vx = 0;
+				this.vy = 0;
+			}
+		}
+
+		if (this.state === 'idle') {
+			if (Math.random() < this.anger_chance
+					&& (this.target = game.query_entities(HealthyEntity)
+							.find(e => e != this && dist_sqr(e, this) < 100 * 100 && this.attack_tags.includes(e.type_tag)))) {
+				var d = this.target.px !== this.px || this.target.py !== this.py
+						? unit_mul(unit_delta(this, this.target), this.speed)
+						: p_zero;
+				this.vx = d.px;
+				this.vy = d.py;
+				this.state = 'agro';
+			} else if (this.vx === 0 && this.vy === 0) {
+				var d = unit_mul(rand_vector(), this.speed / 2);
+				this.vx = d.px;
+				this.vy = d.py;
+			} else {
+				this.vx = 0;
+				this.vy = 0;
+			}
+		}
+	});
+
+	this.every(0.5 - Math.random() * 0.25 * 0.5, () => {
+		if (this.state === 'agro' && this.target.active) {
+			if (dist_sqr(this.target, this) < this.attack_range * this.attack_range) {
+				this.fire_at(this.target);
+			}
+		}
+	});
+}
+HealthyEntity.prototype = Object.create(AnimatedColorEntity.prototype);
+// HealthyEntity.prototype.attack = function (other) {
+// 	other.take_damage(this, this.atk);
+// };
+HealthyEntity.prototype.take_damage = function (from, dmg) {
+	if (this.state === 'idle') {
+		this.state = 'agro';
+		this.target = from;
+
+		var d = this.target.px !== this.px || this.target.py !== this.py
+				? unit_mul(unit_delta(this, this.target), this.speed)
+				: p_zero;
+		this.vx = d.px;
+		this.vy = d.py;
+	}
+
+	var amount = Math.max(0, dmg - this.def);
+	this.health -= amount;
+
+	if (amount > 0) {
+		game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "-" + amount, '#f64');
+		game.services.sound_service.play_sound(game.audio.hit, this.light_amount, 1);
+	}
+	this.shake_amount += 8;
+
+	if (this.health <= 0) {
+		game.remove_entity(this);
+		this.active = false;
+		game.services.particle_service.draw_splash(this.px, this.py, this.light_amount);
+		for (var i = 0; i < this.souls; i++)
+			game.add_entity(new SoulEntity(this.px, this.py));
+	}
+};
+HealthyEntity.prototype.update = function (game) {
+	AnimatedColorEntity.prototype.update.call(this, game);
+	if (this.fire_timer > 0) {
+		this.fire_timer -= game.deltatime;
+	}
+};
+HealthyEntity.prototype.fire_at = function (p) {
+	if (this.fire_timer <= 0) {
+		d = unit_delta(this, p);
+		game.add_entity(new Projectile(this, this.atk, d, this.px, this.py, this.attack_type));
+		this.fire_timer = this.fire_cooldown;
+	}
+};
+
+function Projectile(from, dmg, d, px, py, type) {
+	ScreenEntity.call(this, game, px, py, 32, 32, 
+			type === 'punch' ? game.images.monochrome_tilemap_packed.subimg(4,5)
+			: type === 'sword' ? game.images.monochrome_tilemap_packed.subimg(6,4)
+			: type === 'echo' ? game.images.monochrome_tilemap_packed.subimg(5,5)
+			: game.images.monochrome_tilemap_packed.subimg(6,4));
+
+	this.angle = angle(d) + 45;
+
+	d = unit_mul(d, type === 'sword' ? 500
+			: type === 'punch' ? 200
+			: type === 'echo' ? 200
+			: 500);
+
+	this.vx = d.px;
+	this.vy = d.py;
+
+	this.dmg = dmg;
+	this.from = from;
+	this.type = type;
+
+	this.after(0.5, () => {
+		game.remove_entity(this);
+	});
+
+	var d = dist(this, { px: game.canvas.width / 2, py: game.canvas.height / 2});
+	var f = game.canvas.width / 2 - d;
+	this.alpha = Math.min(1, Math.max(0.025, (300 - d) / 300));
+}
+Projectile.prototype = Object.create(ScreenEntity.prototype);
+Projectile.prototype.update = function(game) {
+	ScreenEntity.prototype.update.call(this, game);
+
+	var col = game.query_entities(HealthyEntity)
+		.find(e => e != this.from && dist_sqr(e, this) < 16*16);
+
+	if (col) {
+		col.take_damage(this.from, this.dmg);
+		game.remove_entity(this);
+	}
+
+	var d = dist(this, { px: game.canvas.width / 2, py: game.canvas.height / 2});
+	var f = game.canvas.width / 2 - d;
+	this.alpha = Math.min(1, Math.max(0.025, (300 - d) / 300));
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function SoulEntity(px, py) {
+	AnimatedColorEntity.call(this, px, py, 24, 24,
+			game.images.monochrome_tilemap_packed.subimg(0,0),
+			game.images.monochrome_tilemap_packed.subimg(1,0), '#eadab6', '#f17f1c');
+
+	this.leaves_footprints = false;
+
+	this.every(0.25, () => {
+		game.services.particle_service.draw_image(this.image, this.px, this.py, this.width, this.height, this.light_amount);
+
+		var d = unit_mul(rand_vector(), 20);
+		var player;
+		if (player = game.query_entities(Player).find(p => dist_sqr(p, this) < 200*200)) {
+			d = unit_mul(unit_delta(this, player), 100);
+			if (dist_sqr(player, this) < player.width * player.width) {
+				game.remove_entity(this);
+				player.souls += 1;
+				console.log('souls:',player.souls);
+				game.services.particle_service.draw_text(player.px, player.py - 60, player.light_amount, 'souls: ' + player.souls, '#fff');
+			}
+		}
+
+		this.vx = d.px;
+		this.vy = d.py;
+
+	});
+}
+SoulEntity.prototype = Object.create(AnimatedColorEntity.prototype);
+
+
+
+
+
+
+
+
+
+
+
+function BatEnemy(px, py) {
+	HealthyEntity.call(this, px, py, 32, 32,
+			game.images.monochrome_tilemap_packed.subimg(2,0),
+			game.images.monochrome_tilemap_packed.subimg(3,0));
+
+	this.leaves_footprints = false;
+	this.type_tag = 'bat';
+	this.attack_range = 200;
+	this.attack_type = 'echo';
+}
+BatEnemy.prototype = Object.create(HealthyEntity.prototype);
+
+
+
+
+
+
+
 function Player(px, py) {
-	AnimatedColorEntity.call(this, px, py, 32, 32,
+	HealthyEntity.call(this, px, py, 32, 32,
 			game.images.monochrome_tilemap_packed.subimg(4,0),
 			game.images.monochrome_tilemap_packed.subimg(5,0));
+
+	this.speed = 250;
+	this.atk = 5;
+
+	this.state = 'controlled';
+	this.attack_type = 'sword';
+	this.type_tag = 'player';
 }
-Player.prototype = Object.create(AnimatedColorEntity.prototype);
+Player.prototype = Object.create(HealthyEntity.prototype);
 Player.prototype.update = function (game) {
 	var d = { px: 0, py: 0 };
 	if (game.keystate['d'])
@@ -1153,109 +1407,114 @@ Player.prototype.update = function (game) {
 		this.vy = 0;
 	}
 
-	if (game.is_mouse_pressed() && this.contains_point(game.mouse_game_position)) {
-		game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "-16", '#f64');
-		game.services.sound_service.play_sound(game.audio.hit, 1, 1);
-		this.shake_amount += 16;
+	if (game.mouse1_state) {
+		// d = unit_mul(unit_delta(this, game.mouse_game_position), 500);
+		// game.add_entity(new Projectile(this, this.atk, d, this.px, this.py));
+		this.fire_at(game.mouse_game_position);
 	}
 
-	if (Math.random() < 0.0005) {
-		game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "click me!");
-	}
+	// if (game.is_mouse_pressed() && this.contains_point(game.mouse_game_position)) {
+	// 	game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "-16", '#f64');
+	// 	game.services.sound_service.play_sound(game.audio.hit, 1, 1);
+	// 	this.shake_amount += 16;
+	// }
+
+	// if (Math.random() < 0.0005) {
+	// 	game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "click me!");
+	// }
 
 
-	AnimatedColorEntity.prototype.update.call(this, game);
+	HealthyEntity.prototype.update.call(this, game);
 };
 
-function BatEnemy(px, py) {
-	AnimatedColorEntity.call(this, px, py, 32, 32,
-			game.images.monochrome_tilemap_packed.subimg(8,0),
-			game.images.monochrome_tilemap_packed.subimg(9,0));
 
-	this.speed = 100;
-	this.health = 10;
-	this.atk = 10;
-	this.state = 'idle';
 
-	this.anger_chance = 0.2;
-	this.attack_range = this.width / 2;
+function ShopItemButton(px, py, sx, sy, item_image, callback) {
+	Button.call(this, px, py, sx, sy, undefined, callback);
 
-	var period = 3;
-	this.every(period - Math.random() * period * 0.5, () => {
-		if (this.state === 'agro') {
-			if (this.target.active && Math.random() < (1 - this.anger_chance)) {
-				var d = this.target.px !== this.px || this.target.py !== this.py
-						? unit_mul(unit_delta(this, this.target), this.speed)
-						: p_zero;
-				this.vx = d.px;
-				this.vy = d.py;
-			} else {
-				this.state = 'idle';
-				this.vx = 0;
-				this.vy = 0;
-			}
-		}
+	this.item_image = item_image;
 
-		if (this.state === 'idle') {
-			if (Math.random() < this.anger_chance
-					&& (this.target = game.query_entities(BatEnemy).find(e => e != this && dist_sqr(e, this) < 100 * 100))) {
-				var d = this.target.px !== this.px || this.target.py !== this.py
-						? unit_mul(unit_delta(this, this.target), this.speed)
-						: p_zero;
-				this.vx = d.px;
-				this.vy = d.py;
-				this.state = 'agro';
-			} else if (this.vx === 0 && this.vy === 0) {
-				var d = unit_mul(rand_vector(), this.speed / 2);
-				this.vx = d.px;
-				this.vy = d.py;
-			} else {
-				this.vx = 0;
-				this.vy = 0;
-			}
-		}
-	});
-
-	this.every(0.25 - Math.random() * 0.25 * 0.5, () => {
-		if (this.state === 'agro' && this.target.active) {
-			if (dist(this.target, this) < this.attack_range) {
-				this.attack(this.target);
-			}
-		}
-	});
 }
-BatEnemy.prototype = Object.create(AnimatedColorEntity.prototype);
-// BatEnemy.prototype.update = function (game) {
-// 	AnimatedColorEntity.prototype.update.call(this, game);
-
-// };
-BatEnemy.prototype.attack = function (other) {
-	other.take_damage(this, this.atk);
+ShopItemButton.prototype = Object.create(Button.prototype);
+ShopItemButton.prototype.draw_self = function(ctx) {
+	Button.prototype.draw_self.call(this, ctx);
+	if (this.item_image)
+		ctx.drawImage(this.item_image,
+			this.frame * (this.item_image.width / this.max_frame), 0, this.item_image.width / this.max_frame, this.item_image.height,
+			0 - (this.width - 25) / 2, 0 - (this.height - 25) / 2, this.width - 25, (this.height - 25));
 };
-BatEnemy.prototype.take_damage = function (from, dmg) {
-	if (this.state === 'idle') {
-		this.state = 'agro';
-		this.target = from;
 
-		var d = this.target.px !== this.px || this.target.py !== this.py
-				? unit_mul(unit_delta(this, this.target), this.speed)
-				: p_zero;
-		this.vx = d.px;
-		this.vy = d.py;
-	}
 
-	this.health -= dmg;
 
-	game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "-" + dmg, '#f64');
-	game.services.sound_service.play_sound(game.audio.hit, this.light_amount, 1);
-	this.shake_amount += 8;
 
-	if (this.health <= 0) {
-		game.remove_entity(this);
-		this.active = false;
-		game.services.particle_service.draw_splash(this.px, this.py - 30, this.light_amount);
+
+
+
+
+
+function ControlService() {
+	Entity.call(this, game);
+
+	this.current_view = '???';
+}
+ControlService.prototype = Object.create(Entity.prototype);
+ControlService.prototype.update = function(game) {
+	Entity.prototype.update.call(this, game);
+
+	var has_transition = game.query_entities(BubbleTransition).length > 0;
+	var has_player = game.query_entities(Player).length > 0;
+
+	if (has_transition)
+		return;
+
+
+	if (this.current_view === 'game') {
+		if (!has_player) {
+			game.add_entity(new BubbleTransition(() => {
+				game.remove_entities(game.query_entities(AnimatedColorEntity));
+				game.remove_entities(game.query_entities(SoulEntity));
+				game.remove_entities(game.query_entities(Projectile));
+
+				this.open_shop();
+			}));
+		}
+	} else if (this.current_view === 'shop') {
+
 	}
 };
+ControlService.prototype.open_shop = function() {
+	this.current_view = 'shop';
+
+	game.add_entity(new Button(game.canvas.width-150,game.canvas.height-50, 200, 50, 'Continue >', () => {
+		if (game.query_entities(BubbleTransition).length === 0)
+			game.add_entity(new BubbleTransition(() => {
+				game.remove_entities(game.query_entities(Button));
+				game.remove_entities(game.query_entities(AnimatedColorEntity));
+				game.remove_entities(game.query_entities(SoulEntity));
+				game.remove_entities(game.query_entities(Projectile));
+
+				this.open_game();
+			}));
+	}));
+
+	game.add_entity(new ShopItemButton(100, 100, 100, 100, game.images.monochrome_tilemap_packed.subimg(6,4), () => {
+		// if (game.query_entities(BubbleTransition).length === 0)
+			
+	}));
+};
+ControlService.prototype.open_game = function() {
+	this.current_view = 'game';
+
+	for (var i = 0; i < 10; i++) {
+		game.add_entity(new BatEnemy(100 + Math.random() * 500,100 + Math.random() * 500));
+	}
+	game.add_entity(new Player(game.canvas.width / 2, game.canvas.height / 2));
+};
+
+
+
+
+
 
 
 
@@ -1283,41 +1542,33 @@ function main () {
 		slice_tilesheet(game.images.monochrome_tilemap_packed, 8,8);
 
 		// initialize all systems
+		game.services.control_service = new ControlService();
 		game.services.particle_service = new ParticleService();
 		game.services.sound_service = new SoundService();
 
-		// game.add_entity(new TargetCircle(100, 100));
-		game.add_entity(button = new Button(100,canvas.height-25, 200, 50, 'Transition!', () => {
-			game.add_entity(new BubbleTransition(() => {
-				var count = game.query_entities(AnimatedColorEntity).length;
-				game.remove_entities(game.query_entities(AnimatedColorEntity));
-				if (count > 5) {
-					for (var i = 0; i < 1; i++) {
-						game.add_entity(new Player(canvas.width / 2, canvas.height / 2));
-					}
-				} else {
-					for (var i = 0; i < 100; i++) {
-						game.add_entity(new BatEnemy(100 + Math.random() * 2000,100 + Math.random() * 2000));
-					}
-				}
-			}));
-		}));
+		// game.add_entity(button = new Button(100,canvas.height-25, 200, 50, 'Transition!', () => {
+		// 	game.add_entity(new BubbleTransition(() => {
+		// 		var count = game.query_entities(AnimatedColorEntity).length;
+		// 		game.remove_entities(game.query_entities(AnimatedColorEntity));
+		// 		if (count > 5) {
+		// 			for (var i = 0; i < 1; i++) {
+		// 				game.add_entity(new Player(canvas.width / 2, canvas.height / 2));
+		// 			}
+		// 		} else {
+		// 			for (var i = 0; i < 100; i++) {
+		// 				game.add_entity(new BatEnemy(100 + Math.random() * 2000,100 + Math.random() * 2000));
+		// 			}
+		// 		}
+		// 	}));
+		// }));
 
-		for (var i = 0; i < 10; i++) {
-			game.add_entity(new BatEnemy(100 + Math.random() * 500,100 + Math.random() * 500));
-		}
-		// game.add_entity(brackets = new BracketsDisplay(canvas.width / 2, canvas.height - 100));
+		// for (var i = 0; i < 10; i++) {
+		// 	game.add_entity(new BatEnemy(100 + Math.random() * 500,100 + Math.random() * 500));
+		// }
+		// game.add_entity(new Player(canvas.width / 2, canvas.height / 2));
 
-		// var s = new ScreenEntity(game, 0,0,32,32, game.images.enemy);
-		// s.max_frame = 4;
-		// brackets.add_entity(s);
-		// brackets.respace_all();
 
-		// game.services.turret_service.add_turret(100, 300);
-		// game.services.turret_service.add_turret(300, 450);
-		// game.add_entity(new TargetCircle(100, 400));
-		// game.add_entity(new GoalCircle(300, 600));
-
+		game.services.control_service.open_shop();
 
 		game.run_game(ctx, 60);
 	});
