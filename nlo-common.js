@@ -221,6 +221,8 @@ GameSystem.prototype.draw = function (ctx) {
 	ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
 	var entities_to_draw = this.entities.filter(e => e.active);
+	entities_to_draw = entities_to_draw.filter(e => !(e instanceof ScreenEntity) || (e.px + e.width / 2 >= 0 && e.py + e.height / 2 >= 0
+			&& e.px - e.width / 2 <= this.canvas.width && e.py - e.height / 2 <= this.canvas.height));
 	entities_to_draw.sort(function (a, b) { return a.z_index - b.z_index; });
 	var game_systems_to_draw = Object.values(this.services);
 	game_systems_to_draw.sort(function (a, b) { return a.z_index - b.z_index; });
@@ -468,7 +470,7 @@ ScreenEntity.prototype.draw = function(ctx) {
 	ctx.save();
 
 	ctx.globalAlpha = this.alpha;
-	ctx.translate(this.px, this.py);
+	ctx.translate(Math.floor(this.px), Math.floor(this.py));
 	ctx.rotate(this.angle * Math.PI / 180);
 	// ctx.rotate(Math.PI * (Math.floor(this.angle / this.angle_granularity) * this.angle_granularity) / 180);
 

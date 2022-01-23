@@ -739,6 +739,115 @@ var game;
 // };
 
 
+function slice_tilesheet(img, sx, sy) {
+	for (var y = 0; y < img.height; y+=sy) {
+		for (var x = 0; x < img.width; x+=sx) {
+			var c = document.createElement('canvas');
+			c.width = sx;
+			c.height = sy;
+			var ctx = c.getContext('2d');
+			ctx.imageSmoothingEnabled = false;
+			ctx.drawImage(img, -x,-y);
+
+			img['i_' + (x / sx) + '_' + (y / sy)] = c;
+		}
+	}
+
+	img.subimg = (x,y) => {
+		return img['i_' + x + '_' + y];
+	};
+}
+
+
+function create_color_layer_buffers(img, colors) {
+	return colors.map(color => {
+		var c = document.createElement('canvas');
+		c.width = img.width;
+		c.height = img.height;
+		var ctx = c.getContext('2d');
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(img, 0,0);
+		ctx.globalCompositeOperation = 'source-in';
+		ctx.fillStyle = color;
+		ctx.fillRect(0,0,c.width,c.height);
+		return c;
+	});
+}
+function render_layer_color(c, color) {
+	var ctx = c.getContext('2d');
+	ctx.globalCompositeOperation = 'source-in';
+	ctx.fillStyle = color;
+	ctx.fillRect(0,0,c.width,c.height);
+	return c;
+}
+
+
+
+
+function ParticleService() {
+	CanvasEntity.call(this, game);
+	this.z_index = -40;
+	this.redraw_amount = 0;
+}
+ParticleService.prototype = Object.create(CanvasEntity.prototype);
+ParticleService.prototype.draw = function(ctx) {
+	CanvasEntity.prototype.draw.call(this, ctx);
+	this.redraw_canvas_fade(game.deltatime);
+};
+ParticleService.prototype.redraw_canvas_fade = function(amount) {
+	this.redraw_amount += amount;
+	if (this.redraw_amount > 0.15) {
+		this.redraw_amount -= 0.15;
+
+		var new_buffer_canvas = document.createElement('canvas');
+		new_buffer_canvas.width = game.canvas.width;
+		new_buffer_canvas.height = game.canvas.height;
+		var new_buffer_context = new_buffer_canvas.getContext('2d');
+		new_buffer_context.fillStyle = 'rgba(1,1,1,0.5)';
+		new_buffer_context.fillRect(0, 0, game.canvas.width, game.canvas.height);
+		new_buffer_context.globalCompositeOperation = 'source-in';
+		new_buffer_context.drawImage(this.buffer_canvas, 0, 0);
+		new_buffer_context.globalCompositeOperation = 'source-over';
+		this.buffer_canvas = new_buffer_canvas;
+	}
+};
+ParticleService.prototype.draw_particle = function(px, py, amount=1) {
+	var i = 0;
+	var ctx = this.buffer_canvas.getContext('2d');
+	ctx.globalAlpha = amount;
+	ctx.fillStyle = '#fff4';
+	ctx.fillRect(px - 6, py - 6 - ++i*5, 12,12);
+
+
+	// ctx.strokeStyle = '#fff';
+	// ctx.fillStyle = '#fff';
+
+	// for (var i = 0; i < amount; i++) {
+	// 	ctx.beginPath();
+	// 	ctx.filter = 'blur(1px)';
+	// 	ctx.lineWidth = Math.floor(Math.random() * 3) + 2;
+	// 	ctx.moveTo(px, py);
+	// 	ctx.lineTo(px + Math.random() * 70 - 35, py + Math.random() * 70 - 35);
+	// 	// ctx.bezierCurveTo(from.px + d1.px, from.py + d1.py, to.px + d2.px, to.py + d2.py, to.px, to.py);
+	// 	// ctx.bezierCurveTo(from.px + dr1.px, from.py + dr1.py, to.px + dr2.px, to.py + dr2.py, to.px, to.py);
+	// 	ctx.stroke();
+	// 	ctx.restore();
+	// 	// ctx.beginPath();
+	// 	// ctx.filter = 'blur(3px)';
+	// 	// // ctx.lineWidth = Math.floor(Math.random() * 8) + 4;
+	// 	// ctx.arc(px + Math.random()*30-15, py + Math.random()*30-15, Math.floor(Math.random() * 4) + 2, 0, 2 * Math.PI);
+	// 	// // ctx.moveTo(px, py);
+	// 	// // ctx.lineTo(px + Math.random() * 70 - 35, py + Math.random() * 70 - 35);
+	// 	// // ctx.bezierCurveTo(from.px + d1.px, from.py + d1.py, to.px + d2.px, to.py + d2.py, to.px, to.py);
+	// 	// // ctx.bezierCurveTo(from.px + dr1.px, from.py + dr1.py, to.px + dr2.px, to.py + dr2.py, to.px, to.py);
+	// 	// ctx.fill();
+	// 	// ctx.stroke();
+	// 	// ctx.restore();
+	// }
+};
+
+
+
 
 function BubbleTransition(swap_callback, done_callback) {
 	CanvasEntity.call(this, game);
@@ -746,6 +855,8 @@ function BubbleTransition(swap_callback, done_callback) {
 	this.is_up = false;
 	this.swap_callback = swap_callback;
 	this.done_callback = done_callback;
+
+	this.z_index = 1000;
 }
 BubbleTransition.prototype = Object.create(CanvasEntity.prototype);
 BubbleTransition.prototype.update = function (game) {
@@ -784,11 +895,11 @@ BubbleTransition.prototype.update = function (game) {
 				var x = (((a + o / 3) % 10 + 0.5) / 10 % 1) * w;
 				var y = h - (Math.floor((a) / 10) - o/2) * h / 10;
 				local_ctx.moveTo(x, y);
-				local_ctx.arc(x, y, 2 + o, 0, 2 * Math.PI);
+				local_ctx.arc(x, y, 5 + o * 1.5, 0, 2 * Math.PI);
 				local_ctx.moveTo((x + w/10 * 1.5) % w, y - w/10);
-				local_ctx.arc((x + w/10 * 1.5) % w, y + w/10, 2 + o, 0, 2 * Math.PI);
+				local_ctx.arc((x + w/10 * 1.5) % w, y + w/10, 5 + o * 1.5, 0, 2 * Math.PI);
 				local_ctx.moveTo((x + w/10 * 1.5), y - w/10);
-				local_ctx.arc((x + w/10 * 1.5), y + w/10, 2 + o, 0, 2 * Math.PI);
+				local_ctx.arc((x + w/10 * 1.5), y + w/10, 5 + o * 1.5, 0, 2 * Math.PI);
 				// local_ctx.moveTo((x + w/5 * 1.5) % w, y - w/5);
 				// local_ctx.arc((x + w/5 * 1.5) % w, y + w/5, 45, 0, 2 * Math.PI);
 			}
@@ -800,11 +911,11 @@ BubbleTransition.prototype.update = function (game) {
 
 	this.redraw_canvas(0,0);
 
-	if (this.is_up && this.timer >= 220) {
+	if (this.is_up && this.timer >= 200) {
 		game.remove_entity(this);
 		if (this.done_callback)
 			this.done_callback();
-	} else if (!this.is_up && this.timer >= 220) {
+	} else if (!this.is_up && this.timer >= 200) {
 		this.timer = 0;
 		this.is_up = true;
 		if (this.swap_callback)
@@ -826,6 +937,168 @@ Button.prototype.update = function (game) {
 	}
 };
 
+function TriColorEntity(px, py, sx, sy, image) {
+	ScreenEntity.call(this, game, px, py, sx, sy, image);
+
+	this.light_amount = 1;
+	this.light_color = '#fff';
+	this.backing_color = '#a91337';
+	this.shadow_color = '#040b20';
+
+	this.color_timer = Math.random() * Math.PI * 2;
+
+	this.set_image(this.image);
+}
+TriColorEntity.prototype = Object.create(ScreenEntity.prototype);
+TriColorEntity.prototype.update = function (game) {
+	ScreenEntity.prototype.update.call(this, game);
+	this.color_timer = (this.color_timer + game.deltatime) % (Math.PI * 2);
+};
+TriColorEntity.prototype.set_image = function(image) {
+	this.image = image;
+	this.sub_buffers = this.create_sub_buffers(image);
+};
+TriColorEntity.prototype.create_sub_buffers = function(image) {
+	return create_color_layer_buffers(image, [this.light_color, this.backing_color, this.shadow_color]);
+};
+TriColorEntity.prototype.set_light_color = function(color) {
+	this.light_color = color;
+	this.render_color(this.sub_buffers[0], this.light_color);
+};
+TriColorEntity.prototype.set_backing_color = function(color) {
+	this.backing_color = color;
+	this.render_color(this.sub_buffers[1], this.backing_color);
+};
+TriColorEntity.prototype.set_shadow_color = function(color) {
+	this.shadow_color = color;
+	this.render_color(this.sub_buffers[2], this.shadow_color);
+};
+TriColorEntity.prototype.draw_self = function(ctx) {
+	var r = 4;
+	ctx.globalAlpha = this.light_amount;
+	ctx.save();
+	ctx.translate(Math.floor(r * Math.cos(this.color_timer + Math.PI)), Math.floor(r * Math.sin(this.color_timer + Math.PI)));
+	ctx.drawImage(this.sub_buffers[2],
+			0,0, this.image.width, this.image.height,
+			0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+	ctx.restore();
+	ctx.save();
+	ctx.translate(Math.floor(r * Math.cos(this.color_timer)), Math.floor(r * Math.sin(this.color_timer)));
+	ctx.drawImage(this.sub_buffers[1],
+			0,0, this.image.width, this.image.height,
+			0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+	ctx.restore();
+	ctx.drawImage(this.sub_buffers[0],
+			0, 0, this.image.width, this.image.height, 0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+
+	ctx.globalAlpha = 1;
+};
+TriColorEntity.prototype.create_sub_buffer = function(img) {
+	var c = document.createElement('canvas');
+	c.width = img.width;
+	c.height = img.height;
+	var ctx = c.getContext('2d');
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(img, 0,0);
+	return c;
+};
+TriColorEntity.prototype.render_color = function(c, color) {
+	var ctx = c.getContext('2d');
+	ctx.globalCompositeOperation = 'source-in';
+	ctx.fillStyle = color;
+	ctx.fillRect(0,0,c.width,c.height);
+	return c;
+};
+
+function AnimatedColorEntity(px, py, sx, sy, base_image, moving_image) {
+	TriColorEntity.call(this, px, py, sx, sy, base_image);
+	this.base_image = this.image;
+	this.alt_image = moving_image;
+
+	this.base_image_buffers = this.sub_buffers;
+	this.alt_image_buffers = this.create_sub_buffers(this.alt_image);
+
+	this.speed = 250;
+
+	this.leaves_footprints = true;
+	this.is_moving = false;
+	this.moving_timer = 0;
+}
+AnimatedColorEntity.prototype = Object.create(TriColorEntity.prototype);
+AnimatedColorEntity.prototype.update = function (game) {
+	TriColorEntity.prototype.update.call(this, game);
+
+	if (this.vx != 0 || this.vy != 0) {
+		if (!this.is_moving) {
+			this.is_moving = true;
+			this.set_image(this.alt_image);
+			this.moving_timer = Math.random();
+		}
+
+		this.moving_timer += game.deltatime;
+	} else {
+		this.is_moving = false;
+	}
+
+	var d = dist(this, { px: game.canvas.width / 2, py: game.canvas.height / 2});
+	var f = game.canvas.width / 2 - d;
+	this.light_amount = Math.min(1, Math.max(0.025, (300 - d) / 300));
+
+	if (this.is_moving) {
+		if (this.moving_timer >= 0.25) {
+			if (this.image === this.base_image) {
+				this.image = this.alt_image;
+				this.sub_buffers = this.alt_image_buffers;
+				if (this.leaves_footprints)
+					game.services.particle_service.draw_particle(this.px + this.width / 2, this.py + 2, this.light_amount);
+			} else {
+				this.image = this.base_image;
+				this.sub_buffers = this.base_image_buffers;
+				if (this.leaves_footprints)
+					game.services.particle_service.draw_particle(this.px - this.width / 2, this.py - 2, this.light_amount);
+			}
+			this.moving_timer = 0;
+
+		}
+	} else {
+		this.moving_timer = 0;
+
+		if (this.image !== this.base_image) {
+			this.set_image(this.base_image);
+		}
+	}
+};
+
+function Player(px, py) {
+	AnimatedColorEntity.call(this, px, py, 32, 32,
+			game.images.monochrome_tilemap_packed.subimg(4,0),
+			game.images.monochrome_tilemap_packed.subimg(5,0));
+}
+Player.prototype = Object.create(AnimatedColorEntity.prototype);
+Player.prototype.update = function (game) {
+	var d = { px: 0, py: 0 };
+	if (game.keystate['d'])
+		d.px += 1;
+	if (game.keystate['a'])
+		d.px -= 1;
+	if (game.keystate['s'])
+		d.py += 1;
+	if (game.keystate['w'])
+		d.py -= 1;
+
+	if (d.px != 0 || d.py != 0) {
+		d = unit_vector(d);
+		this.vx = this.speed * d.px;
+		this.vy = this.speed * d.py;
+	} else {
+		this.vx = 0;
+		this.vy = 0;
+	}
+
+	AnimatedColorEntity.prototype.update.call(this, game);
+};
+
+
 
 
 function main () {
@@ -836,22 +1109,25 @@ function main () {
 	nlo.load.load_all_assets({
 		images: {
 			ufo: 'assets/img/ufo.png',
+			monochrome_tilemap_packed: 'assets/img/monochrome_tilemap_packed.png',
 		},
 	}, loaded_assets => {
 		game = new GameSystem(canvas, loaded_assets);
-		game.background_color = '#000';
+		game.background_color = '#17181d';
 
-		// // initialize all systems
-		// game.services.user_input_service = new UserInputService();
-		// game.services.enemy_service = new EnemyService();
-		// game.services.turret_service = new TurretService();
-		// game.services.projectile_service = new TurretProjectileService();
-		// game.services.blood_service = new BloodService();
+		slice_tilesheet(game.images.monochrome_tilemap_packed, 8,8);
+
+		// initialize all systems
+		game.services.particle_service = new ParticleService();
 
 		// game.add_entity(new TargetCircle(100, 100));
 		game.add_entity(new Button(200,200, 100, 50, () => {
 			game.add_entity(new BubbleTransition());
 		}));
+
+		for (var i = 0; i < 40; i++) {
+			game.add_entity(new Player(100 + Math.random() * 1000,100 + Math.random() * 1000));
+		}
 		// game.add_entity(brackets = new BracketsDisplay(canvas.width / 2, canvas.height - 100));
 
 		// var s = new ScreenEntity(game, 0,0,32,32, game.images.enemy);
