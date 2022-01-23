@@ -36,6 +36,13 @@ nlo = {
 			audio.load();
 			// audio.play();
 		},
+		load_audio_onpage: function(url, callback) {
+			var audio = document.querySelector("audio[data-url='" + url + "']");
+			if (audio)
+				callback(audio);
+			else
+				nlo.load.load_audio(url, callback);
+		},
 
 		load_all_assets: function(assets, callback) {
 			var images = assets.images;
@@ -70,7 +77,7 @@ nlo = {
 			if (audio) {
 				var keys = Object.keys(audio);
 				for (var i = 0; i < keys.length; i++) {
-					nlo.load.load_audio(audio[keys[i]], (function (key, audio_data) {
+					nlo.load.load_audio_onpage(audio[keys[i]], (function (key, audio_data) {
 						// console.log("loaded audio:", audio_data);
 						loaded_assets.audio[key] = audio_data;
 
