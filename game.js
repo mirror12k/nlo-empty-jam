@@ -796,16 +796,19 @@ ParticleService.prototype.draw = function(ctx) {
 };
 ParticleService.prototype.redraw_canvas_fade = function(amount) {
 	this.redraw_amount += amount;
-	if (this.redraw_amount > 0.15) {
-		this.redraw_amount -= 0.15;
+	if (this.redraw_amount > 0.2) {
+		this.redraw_amount -= 0.2;
 
 		var new_buffer_canvas = document.createElement('canvas');
 		new_buffer_canvas.width = game.canvas.width;
 		new_buffer_canvas.height = game.canvas.height;
 		var new_buffer_context = new_buffer_canvas.getContext('2d');
-		new_buffer_context.fillStyle = 'rgba(1,1,1,0.5)';
+		new_buffer_context.imageSmoothingEnabled = false;
+		new_buffer_context.fillStyle = 'rgba(1,1,1,0.25)';
 		new_buffer_context.fillRect(0, 0, game.canvas.width, game.canvas.height);
 		new_buffer_context.globalCompositeOperation = 'source-in';
+		// new_buffer_context.filter = 'blur(1px)';
+		// new_buffer_context.globalAlpha = 0.5;
 		new_buffer_context.drawImage(this.buffer_canvas, 0, -1);
 		new_buffer_context.globalCompositeOperation = 'source-over';
 		this.buffer_canvas = new_buffer_canvas;
@@ -817,6 +820,17 @@ ParticleService.prototype.draw_particle = function(px, py, amount=1) {
 	ctx.globalAlpha = amount;
 	ctx.fillStyle = '#fff4';
 	ctx.fillRect(px - 6, py - 6 - ++i*5, 12,12);
+};
+ParticleService.prototype.draw_splash = function(px, py, amount=1) {
+	var i = 0;
+	var dirs = [1,1,1,1].map(i => unit_mul(rand_vector(), 10 + Math.random() * 25));
+
+	this.transition(0.25, f => {
+		var ctx = this.buffer_canvas.getContext('2d');
+		ctx.globalAlpha = amount * (1 - f);
+		ctx.fillStyle = '#fff';
+		dirs.forEach(d => ctx.fillRect(px - 6 + d.px * f, py - 6 + d.py * f, 12,12));
+	});
 };
 ParticleService.prototype.draw_text = function(px, py, amount, text, color='#fff') {
 	var i = 0;
@@ -1092,12 +1106,12 @@ AnimatedColorEntity.prototype.update = function (game) {
 				this.image = this.alt_image;
 				this.sub_buffers = this.alt_image_buffers;
 				if (this.leaves_footprints)
-					game.services.particle_service.draw_particle(this.px + this.width / 2, this.py + 2, this.light_amount);
+					game.services.particle_service.draw_particle(this.px + this.width / 2, this.py + this.height / 2 + 2, this.light_amount);
 			} else {
 				this.image = this.base_image;
 				this.sub_buffers = this.base_image_buffers;
 				if (this.leaves_footprints)
-					game.services.particle_service.draw_particle(this.px - this.width / 2, this.py - 2, this.light_amount);
+					game.services.particle_service.draw_particle(this.px - this.width / 2, this.py + this.height / 2 - 2, this.light_amount);
 			}
 
 			this.moving_timer = 0;
@@ -1153,6 +1167,96 @@ Player.prototype.update = function (game) {
 	AnimatedColorEntity.prototype.update.call(this, game);
 };
 
+function BatEnemy(px, py) {
+	AnimatedColorEntity.call(this, px, py, 32, 32,
+			game.images.monochrome_tilemap_packed.subimg(8,0),
+			game.images.monochrome_tilemap_packed.subimg(9,0));
+
+	this.speed = 100;
+	this.health = 10;
+	this.atk = 10;
+	this.state = 'idle';
+
+	this.anger_chance = 0.2;
+	this.attack_range = this.width / 2;
+
+	var period = 3;
+	this.every(period - Math.random() * period * 0.5, () => {
+		if (this.state === 'agro') {
+			if (this.target.active && Math.random() < (1 - this.anger_chance)) {
+				var d = this.target.px !== this.px || this.target.py !== this.py
+						? unit_mul(unit_delta(this, this.target), this.speed)
+						: p_zero;
+				this.vx = d.px;
+				this.vy = d.py;
+			} else {
+				this.state = 'idle';
+				this.vx = 0;
+				this.vy = 0;
+			}
+		}
+
+		if (this.state === 'idle') {
+			if (Math.random() < this.anger_chance
+					&& (this.target = game.query_entities(BatEnemy).find(e => e != this && dist_sqr(e, this) < 100 * 100))) {
+				var d = this.target.px !== this.px || this.target.py !== this.py
+						? unit_mul(unit_delta(this, this.target), this.speed)
+						: p_zero;
+				this.vx = d.px;
+				this.vy = d.py;
+				this.state = 'agro';
+			} else if (this.vx === 0 && this.vy === 0) {
+				var d = unit_mul(rand_vector(), this.speed / 2);
+				this.vx = d.px;
+				this.vy = d.py;
+			} else {
+				this.vx = 0;
+				this.vy = 0;
+			}
+		}
+	});
+
+	this.every(0.25 - Math.random() * 0.25 * 0.5, () => {
+		if (this.state === 'agro' && this.target.active) {
+			if (dist(this.target, this) < this.attack_range) {
+				this.attack(this.target);
+			}
+		}
+	});
+}
+BatEnemy.prototype = Object.create(AnimatedColorEntity.prototype);
+// BatEnemy.prototype.update = function (game) {
+// 	AnimatedColorEntity.prototype.update.call(this, game);
+
+// };
+BatEnemy.prototype.attack = function (other) {
+	other.take_damage(this, this.atk);
+};
+BatEnemy.prototype.take_damage = function (from, dmg) {
+	if (this.state === 'idle') {
+		this.state = 'agro';
+		this.target = from;
+
+		var d = this.target.px !== this.px || this.target.py !== this.py
+				? unit_mul(unit_delta(this, this.target), this.speed)
+				: p_zero;
+		this.vx = d.px;
+		this.vy = d.py;
+	}
+
+	this.health -= dmg;
+
+	game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "-" + dmg, '#f64');
+	game.services.sound_service.play_sound(game.audio.hit, this.light_amount, 1);
+	this.shake_amount += 8;
+
+	if (this.health <= 0) {
+		game.remove_entity(this);
+		this.active = false;
+		game.services.particle_service.draw_splash(this.px, this.py - 30, this.light_amount);
+	}
+};
+
 
 
 
@@ -1193,14 +1297,14 @@ function main () {
 					}
 				} else {
 					for (var i = 0; i < 100; i++) {
-						game.add_entity(new Player(100 + Math.random() * 2000,100 + Math.random() * 2000));
+						game.add_entity(new BatEnemy(100 + Math.random() * 2000,100 + Math.random() * 2000));
 					}
 				}
 			}));
 		}));
 
-		for (var i = 0; i < 100; i++) {
-			game.add_entity(new Player(100 + Math.random() * 2000,100 + Math.random() * 2000));
+		for (var i = 0; i < 10; i++) {
+			game.add_entity(new BatEnemy(100 + Math.random() * 500,100 + Math.random() * 500));
 		}
 		// game.add_entity(brackets = new BracketsDisplay(canvas.width / 2, canvas.height - 100));
 

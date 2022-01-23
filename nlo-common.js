@@ -605,6 +605,7 @@ CanvasEntity.prototype.redraw_canvas = function(dx,dy) {
 	this.buffer_canvas = new_buffer_canvas;
 };
 
+var p_zero = { px: 0, py: 0 };
 function lerp(a, b, f) { return a * (1 - f) + b * f; }
 function lerpp(p1, p2, f) { return { px: p1.px * (1 - f) + p2.px * f, py: p1.py * (1 - f) + p2.py * f }; }
 function vector_delta(p1,p2) { return { px: p2.px - p1.px, py: p2.py - p1.py }; }
@@ -612,7 +613,9 @@ function vector_length(p) { return Math.sqrt(p.px ** 2 + p.py ** 2); }
 function dist_sqr(p1,p2) { return (p1.px - p2.px) ** 2 + (p1.py - p2.py) ** 2; }
 function dist(p1,p2) { return Math.sqrt((p1.px - p2.px) ** 2 + (p1.py - p2.py) ** 2); }
 function unit_vector(p) { var d = vector_length(p); return { px: p.px/d, py: p.py/d }; }
+function unit_delta(p1,p2) { return unit_vector({ px: p2.px - p1.px, py: p2.py - p1.py }); }
 function unit_mul(p, n) { return { px: p.px*n, py: p.py*n }; }
 function avgp(p1, p2) { return { px: (p1.px+p2.px)/2, py: (p1.py+p2.py)/2 }; }
 function addp(p1, p2) { return { px: p1.px+p2.px, py: p1.py+p2.py }; }
+function rand_vector() { var a = Math.random() * Math.PI * 2; return { px: Math.cos(a), py: Math.sin(a) };; }
 
