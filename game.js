@@ -1174,7 +1174,7 @@ function main () {
 		},
 	}, loaded_assets => {
 		game = new GameSystem(canvas, loaded_assets);
-		game.background_color = '#17181d';
+		game.background_color = '#232836';
 
 		slice_tilesheet(game.images.monochrome_tilemap_packed, 8,8);
 
