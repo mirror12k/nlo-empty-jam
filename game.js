@@ -806,7 +806,7 @@ ParticleService.prototype.redraw_canvas_fade = function(amount) {
 		new_buffer_context.fillStyle = 'rgba(1,1,1,0.5)';
 		new_buffer_context.fillRect(0, 0, game.canvas.width, game.canvas.height);
 		new_buffer_context.globalCompositeOperation = 'source-in';
-		new_buffer_context.drawImage(this.buffer_canvas, 0, 0);
+		new_buffer_context.drawImage(this.buffer_canvas, 0, -1);
 		new_buffer_context.globalCompositeOperation = 'source-over';
 		this.buffer_canvas = new_buffer_canvas;
 	}
@@ -817,37 +817,40 @@ ParticleService.prototype.draw_particle = function(px, py, amount=1) {
 	ctx.globalAlpha = amount;
 	ctx.fillStyle = '#fff4';
 	ctx.fillRect(px - 6, py - 6 - ++i*5, 12,12);
-
-
-	// ctx.strokeStyle = '#fff';
-	// ctx.fillStyle = '#fff';
-
-	// for (var i = 0; i < amount; i++) {
-	// 	ctx.beginPath();
-	// 	ctx.filter = 'blur(1px)';
-	// 	ctx.lineWidth = Math.floor(Math.random() * 3) + 2;
-	// 	ctx.moveTo(px, py);
-	// 	ctx.lineTo(px + Math.random() * 70 - 35, py + Math.random() * 70 - 35);
-	// 	// ctx.bezierCurveTo(from.px + d1.px, from.py + d1.py, to.px + d2.px, to.py + d2.py, to.px, to.py);
-	// 	// ctx.bezierCurveTo(from.px + dr1.px, from.py + dr1.py, to.px + dr2.px, to.py + dr2.py, to.px, to.py);
-	// 	ctx.stroke();
-	// 	ctx.restore();
-	// 	// ctx.beginPath();
-	// 	// ctx.filter = 'blur(3px)';
-	// 	// // ctx.lineWidth = Math.floor(Math.random() * 8) + 4;
-	// 	// ctx.arc(px + Math.random()*30-15, py + Math.random()*30-15, Math.floor(Math.random() * 4) + 2, 0, 2 * Math.PI);
-	// 	// // ctx.moveTo(px, py);
-	// 	// // ctx.lineTo(px + Math.random() * 70 - 35, py + Math.random() * 70 - 35);
-	// 	// // ctx.bezierCurveTo(from.px + d1.px, from.py + d1.py, to.px + d2.px, to.py + d2.py, to.px, to.py);
-	// 	// // ctx.bezierCurveTo(from.px + dr1.px, from.py + dr1.py, to.px + dr2.px, to.py + dr2.py, to.px, to.py);
-	// 	// ctx.fill();
-	// 	// ctx.stroke();
-	// 	// ctx.restore();
-	// }
+};
+ParticleService.prototype.draw_text = function(px, py, amount, text, color='#fff') {
+	var i = 0;
+	var ctx = this.buffer_canvas.getContext('2d');
+	ctx.globalAlpha = amount;
+	ctx.font = "24px dogicabold";
+	ctx.fillStyle = color;
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.fillText(text,px,py);
 };
 
 
+function SoundService() {
+	Entity.call(this, game);
 
+	this.background_music = undefined;
+}
+SoundService.prototype = Object.create(Entity.prototype);
+SoundService.prototype.play_background_music = function(background_music) {
+	if (this.background_music)
+		this.background_music.stop();
+	this.background_music = background_music;
+	this.background_music.loop = true;
+	this.background_music.play();
+};
+SoundService.prototype.play_sound = function(sfx, volume=1, pitch_variation=0) {
+	if (Math.random() < volume) {
+		var sound = sfx.cloneNode();
+		sound.volume = volume;
+		sound.playbackRate = 1 + Math.random() * pitch_variation;
+		sound.play();
+	}
+};
 
 function BubbleTransition(swap_callback, done_callback) {
 	CanvasEntity.call(this, game);
@@ -904,7 +907,7 @@ BubbleTransition.prototype.update = function (game) {
 				// local_ctx.arc((x + w/5 * 1.5) % w, y + w/5, 45, 0, 2 * Math.PI);
 			}
 		}
-		local_ctx.fillStyle = this.color || '#c74';
+		local_ctx.fillStyle = this.color || '#14171f';
 		local_ctx.fill();
 
 	}
@@ -925,15 +928,23 @@ BubbleTransition.prototype.update = function (game) {
 };
 
 
-function Button(px, py, sx, sy, callback) {
-	ScreenEntity.call(this, game, px, py, sx, sy, game.images.ufo);
+function Button(px, py, sx, sy, text, callback) {
+	ScreenP9Entity.call(this, game, px, py, sx, sy, game.images.button_p9);
 	this.callback = callback;
+	if (text)
+		this.add_entity(new TextEntity(game, 0,0, 16, text));
 }
-Button.prototype = Object.create(ScreenEntity.prototype);
+Button.prototype = Object.create(ScreenP9Entity.prototype);
 Button.prototype.update = function (game) {
-	ScreenEntity.prototype.update.call(this, game);
+	ScreenP9Entity.prototype.update.call(this, game);
 	if (game.is_mouse_pressed() && this.contains_point(game.mouse_game_position)) {
+		game.services.sound_service.play_sound(game.audio.click, 1, 1);
 		this.callback();
+		this.until(() => !game.mouse1_state, () => {
+			this.alpha = 0.4;
+		}, () => {
+			this.alpha = 1;
+		});
 	}
 };
 
@@ -946,6 +957,7 @@ function TriColorEntity(px, py, sx, sy, image) {
 	this.shadow_color = '#040b20';
 
 	this.color_timer = Math.random() * Math.PI * 2;
+	this.shake_amount = 0;
 
 	this.set_image(this.image);
 }
@@ -953,6 +965,7 @@ TriColorEntity.prototype = Object.create(ScreenEntity.prototype);
 TriColorEntity.prototype.update = function (game) {
 	ScreenEntity.prototype.update.call(this, game);
 	this.color_timer = (this.color_timer + game.deltatime) % (Math.PI * 2);
+	this.shake_amount = this.shake_amount * Math.max(0, 1 - game.deltatime * 2);
 };
 TriColorEntity.prototype.set_image = function(image) {
 	this.image = image;
@@ -974,24 +987,52 @@ TriColorEntity.prototype.set_shadow_color = function(color) {
 	this.render_color(this.sub_buffers[2], this.shadow_color);
 };
 TriColorEntity.prototype.draw_self = function(ctx) {
-	var r = 4;
-	ctx.globalAlpha = this.light_amount;
-	ctx.save();
-	ctx.translate(Math.floor(r * Math.cos(this.color_timer + Math.PI)), Math.floor(r * Math.sin(this.color_timer + Math.PI)));
-	ctx.drawImage(this.sub_buffers[2],
-			0,0, this.image.width, this.image.height,
-			0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
-	ctx.restore();
-	ctx.save();
-	ctx.translate(Math.floor(r * Math.cos(this.color_timer)), Math.floor(r * Math.sin(this.color_timer)));
-	ctx.drawImage(this.sub_buffers[1],
-			0,0, this.image.width, this.image.height,
-			0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
-	ctx.restore();
-	ctx.drawImage(this.sub_buffers[0],
-			0, 0, this.image.width, this.image.height, 0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+	if (this.shake_amount > 0) {
+		var r = 4;
+		ctx.globalAlpha = this.light_amount;
+		ctx.save();
+		ctx.translate(Math.floor(r * Math.cos(this.color_timer + Math.PI) + this.shake_amount * Math.random()),
+				Math.floor(r * Math.sin(this.color_timer + Math.PI) + this.shake_amount * Math.random()));
+		ctx.drawImage(this.sub_buffers[2],
+				0,0, this.image.width, this.image.height,
+				0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+		ctx.restore();
+		ctx.save();
+		ctx.translate(Math.floor(r * Math.cos(this.color_timer) + this.shake_amount * Math.random()),
+				Math.floor(r * Math.sin(this.color_timer) + this.shake_amount * Math.random()));
+		ctx.drawImage(this.sub_buffers[1],
+				0,0, this.image.width, this.image.height,
+				0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+		ctx.restore();
+		ctx.save();
+		ctx.translate(Math.floor(this.shake_amount * Math.random()),
+				Math.floor(this.shake_amount * Math.random()));
+		ctx.drawImage(this.sub_buffers[0],
+				0, 0, this.image.width, this.image.height, 0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+		ctx.restore();
 
-	ctx.globalAlpha = 1;
+		ctx.globalAlpha = 1;
+	} else {
+		var r = 4;
+		ctx.globalAlpha = this.light_amount;
+		ctx.save();
+		ctx.translate(Math.floor(r * Math.cos(this.color_timer + Math.PI)), Math.floor(r * Math.sin(this.color_timer + Math.PI)));
+		ctx.drawImage(this.sub_buffers[2],
+				0,0, this.image.width, this.image.height,
+				0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+		ctx.restore();
+		ctx.save();
+		ctx.translate(Math.floor(r * Math.cos(this.color_timer)), Math.floor(r * Math.sin(this.color_timer)));
+		ctx.drawImage(this.sub_buffers[1],
+				0,0, this.image.width, this.image.height,
+				0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+		ctx.restore();
+		ctx.drawImage(this.sub_buffers[0],
+				0, 0, this.image.width, this.image.height, 0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+
+		ctx.globalAlpha = 1;
+	}
+
 };
 TriColorEntity.prototype.create_sub_buffer = function(img) {
 	var c = document.createElement('canvas');
@@ -1031,7 +1072,8 @@ AnimatedColorEntity.prototype.update = function (game) {
 	if (this.vx != 0 || this.vy != 0) {
 		if (!this.is_moving) {
 			this.is_moving = true;
-			this.set_image(this.alt_image);
+			this.image = this.alt_image;
+			this.sub_buffers = this.alt_image_buffers;
 			this.moving_timer = Math.random();
 		}
 
@@ -1057,8 +1099,10 @@ AnimatedColorEntity.prototype.update = function (game) {
 				if (this.leaves_footprints)
 					game.services.particle_service.draw_particle(this.px - this.width / 2, this.py - 2, this.light_amount);
 			}
+
 			this.moving_timer = 0;
 
+			game.services.sound_service.play_sound(game.audio.step, this.light_amount, 3);
 		}
 	} else {
 		this.moving_timer = 0;
@@ -1095,6 +1139,17 @@ Player.prototype.update = function (game) {
 		this.vy = 0;
 	}
 
+	if (game.is_mouse_pressed() && this.contains_point(game.mouse_game_position)) {
+		game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "-16", '#f64');
+		game.services.sound_service.play_sound(game.audio.hit, 1, 1);
+		this.shake_amount += 16;
+	}
+
+	if (Math.random() < 0.0005) {
+		game.services.particle_service.draw_text(this.px, this.py - 30, this.light_amount, "click me!");
+	}
+
+
 	AnimatedColorEntity.prototype.update.call(this, game);
 };
 
@@ -1110,6 +1165,12 @@ function main () {
 		images: {
 			ufo: 'assets/img/ufo.png',
 			monochrome_tilemap_packed: 'assets/img/monochrome_tilemap_packed.png',
+			button_p9: 'assets/img/button_p9.png',
+		},
+		audio: {
+			step: 'assets/sfx/step.wav',
+			hit: 'assets/sfx/hit.wav',
+			click: 'assets/sfx/click.wav',
 		},
 	}, loaded_assets => {
 		game = new GameSystem(canvas, loaded_assets);
@@ -1119,14 +1180,27 @@ function main () {
 
 		// initialize all systems
 		game.services.particle_service = new ParticleService();
+		game.services.sound_service = new SoundService();
 
 		// game.add_entity(new TargetCircle(100, 100));
-		game.add_entity(new Button(200,200, 100, 50, () => {
-			game.add_entity(new BubbleTransition());
+		game.add_entity(button = new Button(100,canvas.height-25, 200, 50, 'Transition!', () => {
+			game.add_entity(new BubbleTransition(() => {
+				var count = game.query_entities(AnimatedColorEntity).length;
+				game.remove_entities(game.query_entities(AnimatedColorEntity));
+				if (count > 5) {
+					for (var i = 0; i < 1; i++) {
+						game.add_entity(new Player(canvas.width / 2, canvas.height / 2));
+					}
+				} else {
+					for (var i = 0; i < 100; i++) {
+						game.add_entity(new Player(100 + Math.random() * 2000,100 + Math.random() * 2000));
+					}
+				}
+			}));
 		}));
 
-		for (var i = 0; i < 40; i++) {
-			game.add_entity(new Player(100 + Math.random() * 1000,100 + Math.random() * 1000));
+		for (var i = 0; i < 100; i++) {
+			game.add_entity(new Player(100 + Math.random() * 2000,100 + Math.random() * 2000));
 		}
 		// game.add_entity(brackets = new BracketsDisplay(canvas.width / 2, canvas.height - 100));
 

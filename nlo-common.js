@@ -492,19 +492,79 @@ ScreenEntity.prototype.contains_point = function(p) {
 	return Math.abs(p.px - this.px) < this.width / 2 && Math.abs(p.py - this.py) < this.height / 2;
 };
 
+function ScreenP9Entity(game, px, py, width, height, image) {
+	ScreenEntity.call(this, game, px, py, width, height, image);
 
-function TextEntity(game, px, py, text="hello world!") {
+	this.pre_render();
+}
+ScreenP9Entity.prototype = Object.create(ScreenEntity.prototype);
+// ScreenEntity.prototype.draw_self = function(ctx) {
+// 	if (this.image) {
+// 		ctx.drawImage(this.image,
+// 			this.frame * (this.image.width / this.max_frame), 0, this.image.width / this.max_frame, this.image.height,
+// 			0 - this.width / 2, 0 - this.height / 2, this.width, this.height);
+// 	}
+// };
+ScreenP9Entity.prototype.pre_render = function() {
+	if (this.image) {
+		var img = document.createElement('canvas');
+		img.width = this.width;
+		img.height = this.height;
+
+		var w = this.image.width / 3;
+		var h = this.image.height / 3;
+		var ctx = img.getContext('2d');
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(this.image,
+			0, 0, w, h,
+			0, 0, w, h);
+		ctx.drawImage(this.image,
+			w, 0, w, h,
+			w, 0, this.width - 2 * w, h);
+		ctx.drawImage(this.image,
+			w*2, 0, w, h,
+			this.width - w, 0, w, h);
+
+		ctx.drawImage(this.image,
+			0, h, w, h,
+			0, h, w, this.height - 2 * h);
+		ctx.drawImage(this.image,
+			w, h, w, h,
+			w, h, this.width - 2 * w, this.height - 2 * h);
+		ctx.drawImage(this.image,
+			w*2, h, w, h,
+			this.width - w, h, w, this.height - 2 * h);
+
+		ctx.drawImage(this.image,
+			0, h*2, w, h,
+			0, this.height - h, w, h);
+		ctx.drawImage(this.image,
+			w, h*2, w, h,
+			w, this.height - h, this.width - 2 * w, h);
+		ctx.drawImage(this.image,
+			w*2, h*2, w, h,
+			this.width - w, this.height - h, w, h);
+
+		this.image = img;
+	}
+};
+
+
+function TextEntity(game, px, py, size=30, text="hello world!") {
 	Entity.call(this, game);
 	this.text = text;
 	this.px = px;
 	this.py = py;
+	this.size = size;
 }
 TextEntity.prototype = Object.create(Entity.prototype);
 TextEntity.prototype.draw = function (ctx) {
 	ctx.save();
 	ctx.translate(this.px, this.py);
 	ctx.rotate(this.angle * Math.PI / 180);
-	ctx.font = "30px Arial";
+	ctx.font = this.size + "px dogicabold";
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
 	ctx.fillStyle = '#ccc';
 	ctx.fillText(this.text,0,0);
 	ctx.restore();
@@ -516,15 +576,6 @@ function CanvasEntity(game) {
 	this.create_canvas(game);
 }
 CanvasEntity.prototype = Object.create(Entity.prototype);
-CanvasEntity.prototype.draw = function (ctx) {
-	ctx.save();
-	ctx.translate(this.px, this.py);
-	ctx.rotate(this.angle * Math.PI / 180);
-	ctx.font = "30px Arial";
-	ctx.fillStyle = '#ccc';
-	ctx.fillText(this.text,0,0);
-	ctx.restore();
-};
 CanvasEntity.prototype.draw = function(ctx) {
 	// var local_ctx = this.buffer_canvas.getContext('2d');
 	// local_ctx.clearRect(0, 0, this.buffer_canvas.width, this.buffer_canvas.height);
