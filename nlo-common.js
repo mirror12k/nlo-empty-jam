@@ -228,8 +228,11 @@ GameSystem.prototype.draw = function (ctx) {
 	ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
 	var entities_to_draw = this.entities.filter(e => e.active);
-	entities_to_draw = entities_to_draw.filter(e => !(e instanceof ScreenEntity) || (e.px + e.width / 2 >= 0 && e.py + e.height / 2 >= 0
-			&& e.px - e.width / 2 <= this.canvas.width && e.py - e.height / 2 <= this.canvas.height));
+	entities_to_draw = entities_to_draw.filter(e => !(e instanceof ScreenEntity) || (
+				e.px - (this.camera.px - this.canvas.width / 2) + e.width / 2 >= 0
+				&& e.py - (this.camera.py - this.canvas.height / 2) + e.height / 2 >= 0
+				&& e.px - (this.camera.px - this.canvas.width / 2) - e.width / 2 <= this.canvas.width
+				&& e.py - (this.camera.py - this.canvas.height / 2) - e.height / 2 <= this.canvas.height));
 	entities_to_draw.sort(function (a, b) { return a.z_index - b.z_index; });
 	var game_systems_to_draw = Object.values(this.services);
 	game_systems_to_draw.sort(function (a, b) { return a.z_index - b.z_index; });
@@ -573,7 +576,11 @@ TextEntity.prototype.draw = function (ctx) {
 	ctx.textAlign = 'center';
 	ctx.textBaseline = 'middle';
 	ctx.fillStyle = '#ccc';
-	ctx.fillText(this.text,0,0);
+
+	var lines = this.text.split("\n");
+	lines.forEach((l,i) => {
+		ctx.fillText(l,0, (i - lines.length / 2 + 0.5) * this.size * 1.5);
+	});
 	ctx.restore();
 };
 
@@ -581,6 +588,9 @@ TextEntity.prototype.draw = function (ctx) {
 function CanvasEntity(game) {
 	Entity.call(this, game);
 	this.create_canvas(game);
+
+	this.px = this.buffer_canvas.width / 2;
+	this.py = this.buffer_canvas.height / 2;
 }
 CanvasEntity.prototype = Object.create(Entity.prototype);
 CanvasEntity.prototype.draw = function(ctx) {
@@ -588,7 +598,10 @@ CanvasEntity.prototype.draw = function(ctx) {
 	// local_ctx.clearRect(0, 0, this.buffer_canvas.width, this.buffer_canvas.height);
 	// local_ctx.imageSmoothingEnabled = false;
 	// Entity.prototype.draw.call(this, local_ctx);
-	ctx.drawImage(this.buffer_canvas, 0, 0);
+	// ctx.globalAlpha = 1;
+	// ctx.fillStyle = '#ddd';
+	// ctx.fillRect(this.px - this.buffer_canvas.width / 2, this.py - this.buffer_canvas.height / 2, this.buffer_canvas.width, this.buffer_canvas.height);
+	ctx.drawImage(this.buffer_canvas, this.px - this.buffer_canvas.width / 2, this.py - this.buffer_canvas.height / 2);
 };
 CanvasEntity.prototype.create_canvas = function(game) {
 	this.buffer_canvas = document.createElement('canvas');
@@ -621,3 +634,12 @@ function rand_vector() { var a = Math.random() * Math.PI * 2; return { px: Math.
 function angle(d) { return Math.atan2(d.py, d.px) / Math.PI * 180; }
 function angle_of(p1, p2) { return Math.atan2(p2.py - p1.py, p2.px - p1.px) / Math.PI * 180; }
 
+
+
+
+function d2_point_offset(angle, px, py) {
+	return {
+		px: px * Math.cos(Math.PI * angle / 180) - py * Math.sin(Math.PI * angle / 180),
+		py: py * Math.cos(Math.PI * angle / 180) + px * Math.sin(Math.PI * angle / 180),
+	};
+}
