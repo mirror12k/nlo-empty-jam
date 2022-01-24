@@ -331,6 +331,12 @@ GameSystem.prototype.find_at = function(type, p) {
 	return found[0];
 };
 
+GameSystem.prototype.query_by_distance = function(type, p) {
+	var found = this.entities.filter(e => e instanceof type);
+	found.sort((a,b) => Math.abs(a.px - p.px) + Math.abs(a.py - p.py) - (Math.abs(b.px - p.px) + Math.abs(b.py - p.py)));
+	return found;
+};
+
 GameSystem.prototype.find_colliding_rectangular = function(me, type) {
 	var found = [];
 	for (var i = 0; i < this.entities.length; i++) {

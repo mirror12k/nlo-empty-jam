@@ -156,6 +156,17 @@ SoundService.prototype.play_sound = function(sfx, volume=1, pitch_variation=0) {
 	}
 };
 
+
+function LightService() {
+	Entity.call(this, game);
+
+	this.background_music = undefined;
+}
+LightService.prototype = Object.create(Entity.prototype);
+LightService.prototype.get_light = function(p) {
+	return game.query_by_distance(LanternEntity, p)[0];
+};
+
 function BubbleTransition(swap_callback, done_callback) {
 	CanvasEntity.call(this, game);
 	this.timer = 0;
@@ -357,13 +368,14 @@ function AnimatedColorEntity(px, py, sx, sy, base_image, moving_image,
 
 	this.leaves_footprints = true;
 	this.is_moving = false;
+	this.is_idle_animated = false;
 	this.moving_timer = 0;
 }
 AnimatedColorEntity.prototype = Object.create(TriColorEntity.prototype);
 AnimatedColorEntity.prototype.update = function (game) {
 	TriColorEntity.prototype.update.call(this, game);
 
-	if (this.vx != 0 || this.vy != 0) {
+	if (this.vx != 0 || this.vy != 0 || this.is_idle_animated) {
 		if (!this.is_moving) {
 			this.is_moving = true;
 			this.image = this.alt_image;
@@ -376,7 +388,8 @@ AnimatedColorEntity.prototype.update = function (game) {
 		this.is_moving = false;
 	}
 
-	var d = dist(this, { px: game.canvas.width / 2, py: game.canvas.height / 2});
+	// var d = dist(this, { px: game.canvas.width / 2, py: game.canvas.height / 2});
+	var d = dist(this, game.services.light_service.get_light(this));
 	var f = game.canvas.width / 2 - d;
 	this.light_amount = Math.min(1, Math.max(0.025, (300 - d) / 300));
 
@@ -546,7 +559,7 @@ function Projectile(from, dmg, d, px, py, type) {
 		game.remove_entity(this);
 	});
 
-	var d = dist(this, { px: game.canvas.width / 2, py: game.canvas.height / 2});
+	var d = dist(this, game.services.light_service.get_light(this));
 	var f = game.canvas.width / 2 - d;
 	this.alpha = Math.min(1, Math.max(0.025, (300 - d) / 300));
 }
@@ -562,7 +575,7 @@ Projectile.prototype.update = function(game) {
 		game.remove_entity(this);
 	}
 
-	var d = dist(this, { px: game.canvas.width / 2, py: game.canvas.height / 2});
+	var d = dist(this, game.services.light_service.get_light(this));
 	var f = game.canvas.width / 2 - d;
 	this.alpha = Math.min(1, Math.max(0.025, (300 - d) / 300));
 };
@@ -608,6 +621,20 @@ function SoulEntity(px, py) {
 	});
 }
 SoulEntity.prototype = Object.create(AnimatedColorEntity.prototype);
+
+
+
+
+function LanternEntity(px, py) {
+	AnimatedColorEntity.call(this, px, py, 24, 24,
+			game.images.monochrome_tilemap_packed.subimg(0,1),
+			game.images.monochrome_tilemap_packed.subimg(1,1), '#eadab6', '#f17f1c');
+
+	// this.state = 'idle';
+	this.leaves_footprints = false;
+	this.is_idle_animated = true;
+}
+LanternEntity.prototype = Object.create(AnimatedColorEntity.prototype);
 
 
 
@@ -782,6 +809,10 @@ ControlService.prototype.update = function(game) {
 		} else {
 			var player = game.query_entities(Player)[0];
 			game.move_camera(player.px, player.py);
+
+			if (game.query_entities(BatEnemy).length < 3) {
+				this.open_shop();
+			}
 		}
 	} else if (this.current_view === 'shop') {
 	} else if (this.current_view === 'main') {
@@ -795,12 +826,7 @@ ControlService.prototype.open_main = function() {
 	game.add_entity(new Button(game.canvas.width /2,game.canvas.height / 2, 200, 50, 'Play', () => {
 		if (game.query_entities(BubbleTransition).length === 0)
 			game.add_entity(new BubbleTransition(() => {
-				game.remove_entities(game.query_entities(DisplayTextBox));
-				game.remove_entities(game.query_entities(Button));
-				game.remove_entities(game.query_entities(AnimatedColorEntity));
-				game.remove_entities(game.query_entities(SoulEntity));
-				game.remove_entities(game.query_entities(Projectile));
-
+				game.remove_entities(game.entities.filter(e => !(e instanceof BubbleTransition)));
 				this.open_game();
 			}));
 	}));
@@ -814,12 +840,7 @@ ControlService.prototype.open_shop = function() {
 	game.add_entity(new Button(game.canvas.width-150,game.canvas.height-50, 200, 50, 'Continue >', () => {
 		if (game.query_entities(BubbleTransition).length === 0)
 			game.add_entity(new BubbleTransition(() => {
-				game.remove_entities(game.query_entities(DisplayTextBox));
-				game.remove_entities(game.query_entities(Button));
-				game.remove_entities(game.query_entities(AnimatedColorEntity));
-				game.remove_entities(game.query_entities(SoulEntity));
-				game.remove_entities(game.query_entities(Projectile));
-
+				game.remove_entities(game.entities.filter(e => !(e instanceof BubbleTransition)));
 				this.open_game();
 			}));
 	}));
@@ -847,10 +868,13 @@ ControlService.prototype.open_shop = function() {
 ControlService.prototype.open_game = function() {
 	this.current_view = 'game';
 
-	for (var i = 0; i < 10; i++) {
-		game.add_entity(new BatEnemy(100 + Math.random() * 500,100 + Math.random() * 500));
+	for (var i = 0; i < 20; i++) {
+		var v = rand_vector();
+		game.add_entity(new BatEnemy(game.canvas.width / 2 + v.px * (100 + 500 * Math.random()), game.canvas.height / 2 + v.py * (100 + 500 * Math.random())));
 	}
 	game.add_entity(new Player(game.canvas.width / 2, game.canvas.height / 2));
+	game.add_entity(new LanternEntity(game.canvas.width / 2, game.canvas.height / 2 - 100));
+	game.add_entity(new LanternEntity(game.canvas.width / 2 + 400, game.canvas.height / 2 + 500));
 };
 
 
@@ -885,6 +909,7 @@ function main () {
 		slice_tilesheet(game.images.monochrome_tilemap_packed, 8,8);
 
 		// initialize all systems
+		game.services.light_service = new LightService();
 		game.services.control_service = new ControlService();
 		game.services.particle_service = new ParticleService();
 		game.services.sound_service = new SoundService();
@@ -911,8 +936,8 @@ function main () {
 		// game.add_entity(new Player(canvas.width / 2, canvas.height / 2));
 
 
-		game.services.control_service.open_game();
-		// game.services.control_service.open_main();
+		// game.services.control_service.open_game();
+		game.services.control_service.open_main();
 
 		game.run_game(ctx, 60);
 	});
