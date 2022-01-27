@@ -89,6 +89,47 @@ nlo = {
 			}
 		},
 	},
+	image: {
+		slice_tilesheet: function (img, sx, sy) {
+			for (var y = 0; y < img.height; y+=sy) {
+				for (var x = 0; x < img.width; x+=sx) {
+					var c = document.createElement('canvas');
+					c.width = sx;
+					c.height = sy;
+					var ctx = c.getContext('2d');
+					ctx.imageSmoothingEnabled = false;
+					ctx.drawImage(img, -x,-y);
+
+					img['i_' + (x / sx) + '_' + (y / sy)] = c;
+				}
+			}
+
+			img.subimg = (x,y) => {
+				return img['i_' + x + '_' + y];
+			};
+		},
+		create_color_layer_buffers: function (img, colors) {
+			return colors.map(color => {
+				var c = document.createElement('canvas');
+				c.width = img.width;
+				c.height = img.height;
+				var ctx = c.getContext('2d');
+				ctx.imageSmoothingEnabled = false;
+				ctx.drawImage(img, 0,0);
+				ctx.globalCompositeOperation = 'source-in';
+				ctx.fillStyle = color;
+				ctx.fillRect(0,0,c.width,c.height);
+				return c;
+			});
+		},
+		render_img_color: function (img, color) {
+			var ctx = img.getContext('2d');
+			ctx.globalCompositeOperation = 'source-in';
+			ctx.fillStyle = color;
+			ctx.fillRect(0,0,img.width,img.height);
+			return img;
+		},
+	},
 };
 
 function GameSystem(canvas, assets) {
@@ -397,10 +438,31 @@ Entity.prototype.update = function(game) {
 		if (coro.timer <= 0) {
 			if (coro.interval !== undefined) {
 				coro.timer += coro.interval;
+				if (coro.times) {
+					coro.times--;
+					if (coro.times <= 0) {
+						this.coroutine_callbacks.splice(i, 1);
+					}
+				}
 			} else {
 				this.coroutine_callbacks.splice(i, 1);
 			}
 			coro.callback();
+		}
+	}
+
+	var state;
+	if (this.state_tree && (state = this.state_tree[this.current_state])) {
+		if (state.cb)
+			state.cb();
+		state.timer -= game.deltatime;
+		if (state.timer <= 0) {
+			if (state.onend)
+				state.onend();
+			if (state.end_state)
+				this.current_state = state.end_state;
+			else
+				this.current_state = undefined;
 		}
 	}
 };
@@ -423,12 +485,22 @@ Entity.prototype.until = function(condition, callback, onend) {
 		onend: onend,
 	});
 };
-Entity.prototype.every = function(delta, callback) {
-	this.coroutine_callbacks.push({
-		timer: delta,
-		interval: delta,
-		callback: callback,
-	});
+Entity.prototype.every = function(delta, times, callback) {
+	if (callback === undefined) {
+		callback = times;
+		this.coroutine_callbacks.push({
+			timer: delta,
+			interval: delta,
+			callback: callback,
+		});
+	} else {
+		this.coroutine_callbacks.push({
+			timer: delta,
+			interval: delta,
+			times: times,
+			callback: callback,
+		});
+	}
 };
 Entity.prototype.after = function(delta, callback) {
 	this.coroutine_callbacks.push({
@@ -622,6 +694,86 @@ CanvasEntity.prototype.redraw_canvas = function(dx,dy) {
 	// new_buffer_context.globalAlpha = 1 - amount;
 	new_buffer_context.drawImage(this.buffer_canvas, dx,dy);
 	this.buffer_canvas = new_buffer_canvas;
+};
+CanvasEntity.prototype.in_context = function(cb) {
+	var ctx = this.buffer_canvas.getContext('2d');
+	ctx.save();
+	cb(ctx);
+	ctx.restore();
+};
+
+
+
+function MovingCanvasEntity() {
+	CanvasEntity.call(this, game);
+	this.z_index = -40;
+	this.redraw_amount = 0;
+
+	this.fade_canvas = false; // set to a number like 1 or 2 to fade the canvas gradually
+}
+MovingCanvasEntity.prototype = Object.create(CanvasEntity.prototype);
+MovingCanvasEntity.prototype.draw = function(ctx) {
+	CanvasEntity.prototype.draw.call(this, ctx);
+	if (this.fade_canvas)
+		this.redraw_canvas_fade(game.deltatime * this.fade_canvas);
+};
+MovingCanvasEntity.prototype.update = function(game) {
+	CanvasEntity.prototype.update.call(this, game);
+
+	var d = vector_delta({ px: this.opx, py: this.opy }, game.camera);
+	this.redraw_canvas(-d.px, -d.py);
+
+	this.opx = game.camera.px;
+	this.opy = game.camera.py;
+};
+MovingCanvasEntity.prototype.redraw_canvas_fade = function(amount) {
+	this.redraw_amount += amount;
+	if (this.redraw_amount > 0.2) {
+		this.redraw_amount -= 0.2;
+
+		var new_buffer_canvas = document.createElement('canvas');
+		new_buffer_canvas.width = game.canvas.width;
+		new_buffer_canvas.height = game.canvas.height;
+		var new_buffer_context = new_buffer_canvas.getContext('2d');
+		new_buffer_context.imageSmoothingEnabled = false;
+		new_buffer_context.fillStyle = 'rgba(1,1,1,0.25)';
+		new_buffer_context.fillRect(0, 0, game.canvas.width, game.canvas.height);
+		new_buffer_context.globalCompositeOperation = 'source-in';
+		// new_buffer_context.filter = 'blur(1px)';
+		// new_buffer_context.globalAlpha = 0.5;
+		new_buffer_context.drawImage(this.buffer_canvas, 0, -1);
+		new_buffer_context.globalCompositeOperation = 'source-over';
+		this.buffer_canvas = new_buffer_canvas;
+	}
+};
+MovingCanvasEntity.prototype.in_context = function(cb) {
+	var ctx = this.buffer_canvas.getContext('2d');
+	ctx.save();
+	ctx.translate(-this.opx + game.canvas.width / 2, - this.opy + game.canvas.height / 2);
+	cb(ctx);
+	ctx.restore();
+};
+
+function SoundService() {
+	Entity.call(this, game);
+
+	this.background_music = undefined;
+}
+SoundService.prototype = Object.create(Entity.prototype);
+SoundService.prototype.play_background_music = function(background_music) {
+	if (this.background_music)
+		this.background_music.stop();
+	this.background_music = background_music;
+	this.background_music.loop = true;
+	this.background_music.play();
+};
+SoundService.prototype.play_sound = function(sfx, volume=1, pitch_variation=0) {
+	// if (Math.random() < volume) {
+	var sound = sfx.cloneNode();
+	sound.volume = volume;
+	sound.playbackRate = 1 + Math.random() * pitch_variation;
+	sound.play();
+	// }
 };
 
 var p_zero = { px: 0, py: 0 };

@@ -2,158 +2,51 @@
 var game;
 
 
-function slice_tilesheet(img, sx, sy) {
-	for (var y = 0; y < img.height; y+=sy) {
-		for (var x = 0; x < img.width; x+=sx) {
-			var c = document.createElement('canvas');
-			c.width = sx;
-			c.height = sy;
-			var ctx = c.getContext('2d');
-			ctx.imageSmoothingEnabled = false;
-			ctx.drawImage(img, -x,-y);
-
-			img['i_' + (x / sx) + '_' + (y / sy)] = c;
-		}
-	}
-
-	img.subimg = (x,y) => {
-		return img['i_' + x + '_' + y];
-	};
-}
-
-
-function create_color_layer_buffers(img, colors) {
-	return colors.map(color => {
-		var c = document.createElement('canvas');
-		c.width = img.width;
-		c.height = img.height;
-		var ctx = c.getContext('2d');
-		ctx.imageSmoothingEnabled = false;
-		ctx.drawImage(img, 0,0);
-		ctx.globalCompositeOperation = 'source-in';
-		ctx.fillStyle = color;
-		ctx.fillRect(0,0,c.width,c.height);
-		return c;
-	});
-}
-function render_layer_color(c, color) {
-	var ctx = c.getContext('2d');
-	ctx.globalCompositeOperation = 'source-in';
-	ctx.fillStyle = color;
-	ctx.fillRect(0,0,c.width,c.height);
-	return c;
-}
-
 
 
 
 function ParticleService() {
-	CanvasEntity.call(this, game);
+	MovingCanvasEntity.call(this, game);
 	this.z_index = -40;
 	this.redraw_amount = 0;
+	this.fade_canvas = 1;
 }
-ParticleService.prototype = Object.create(CanvasEntity.prototype);
-ParticleService.prototype.draw = function(ctx) {
-	CanvasEntity.prototype.draw.call(this, ctx);
-	this.redraw_canvas_fade(game.deltatime);
-};
-ParticleService.prototype.update = function(game) {
-	CanvasEntity.prototype.update.call(this, game);
-
-	var d = vector_delta({ px: this.opx, py: this.opy }, game.camera);
-	this.redraw_canvas(-d.px, -d.py);
-
-	this.opx = game.camera.px;
-	this.opy = game.camera.py;
-};
-ParticleService.prototype.redraw_canvas_fade = function(amount) {
-	this.redraw_amount += amount;
-	if (this.redraw_amount > 0.2) {
-		this.redraw_amount -= 0.2;
-
-		var new_buffer_canvas = document.createElement('canvas');
-		new_buffer_canvas.width = game.canvas.width;
-		new_buffer_canvas.height = game.canvas.height;
-		var new_buffer_context = new_buffer_canvas.getContext('2d');
-		new_buffer_context.imageSmoothingEnabled = false;
-		new_buffer_context.fillStyle = 'rgba(1,1,1,0.25)';
-		new_buffer_context.fillRect(0, 0, game.canvas.width, game.canvas.height);
-		new_buffer_context.globalCompositeOperation = 'source-in';
-		// new_buffer_context.filter = 'blur(1px)';
-		// new_buffer_context.globalAlpha = 0.5;
-		new_buffer_context.drawImage(this.buffer_canvas, 0, -1);
-		new_buffer_context.globalCompositeOperation = 'source-over';
-		this.buffer_canvas = new_buffer_canvas;
-	}
-};
+ParticleService.prototype = Object.create(MovingCanvasEntity.prototype);
 ParticleService.prototype.draw_particle = function(px, py, amount=1) {
-	// console.log("px: ", px, "py:", py);
-	var ctx = this.buffer_canvas.getContext('2d');
-	ctx.globalAlpha = amount;
-	ctx.fillStyle = '#fff4';
-	ctx.save();
-	ctx.translate(-this.opx + game.canvas.width / 2, - this.opy + game.canvas.height / 2);
-	ctx.fillRect(px - 6, py - 6, 12,12);
-	ctx.restore();
+	this.in_context(ctx => {
+		ctx.globalAlpha = amount;
+		ctx.fillStyle = '#fff4';
+		ctx.fillRect(px - 6, py - 6, 12,12);
+	});
 };
 ParticleService.prototype.draw_image = function(img, px, py, sx, sy, amount=1) {
-	var ctx = this.buffer_canvas.getContext('2d');
-	ctx.globalAlpha = amount / 4;
-	ctx.save();
-	ctx.translate(-this.opx + game.canvas.width / 2, - this.opy + game.canvas.height / 2);
-	ctx.translate(px, py);
-	ctx.drawImage(img, -sx / 2, -sy / 2, sx, sy);
-	ctx.restore();
+	this.in_context(ctx => {
+		ctx.globalAlpha = amount / 4;
+		ctx.translate(px, py);
+		ctx.drawImage(img, -sx / 2, -sy / 2, sx, sy);
+	});
 };
 ParticleService.prototype.draw_splash = function(px, py, amount=1) {
 	var i = 0;
 	var dirs = [1,1,1,1].map(i => unit_mul(rand_vector(), 10 + Math.random() * 25));
 
 	this.transition(0.25, f => {
-		var ctx = this.buffer_canvas.getContext('2d');
-		ctx.globalAlpha = amount * (1 - f);
-		ctx.fillStyle = '#fff';
-		ctx.save();
-		ctx.translate(-this.opx + game.canvas.width / 2, - this.opy + game.canvas.height / 2);
-		dirs.forEach(d => ctx.fillRect(px - 6 + d.px * f, py - 6 + d.py * f, 12,12));
-		ctx.restore();
+		this.in_context(ctx => {
+			ctx.globalAlpha = amount * (1 - f);
+			ctx.fillStyle = '#fff';
+			dirs.forEach(d => ctx.fillRect(px - 6 + d.px * f, py - 6 + d.py * f, 12,12));
+		});
 	});
 };
 ParticleService.prototype.draw_text = function(px, py, amount, text, color='#fff') {
-	var i = 0;
-	var ctx = this.buffer_canvas.getContext('2d');
-	ctx.globalAlpha = amount;
-	ctx.font = "24px dogicabold";
-	ctx.fillStyle = color;
-	ctx.textAlign = 'center';
-	ctx.textBaseline = 'middle';
-	ctx.save();
-	ctx.translate(-this.opx + game.canvas.width / 2, - this.opy + game.canvas.height / 2);
-	ctx.fillText(text,px,py);
-	ctx.restore();
-};
-
-
-function SoundService() {
-	Entity.call(this, game);
-
-	this.background_music = undefined;
-}
-SoundService.prototype = Object.create(Entity.prototype);
-SoundService.prototype.play_background_music = function(background_music) {
-	if (this.background_music)
-		this.background_music.stop();
-	this.background_music = background_music;
-	this.background_music.loop = true;
-	this.background_music.play();
-};
-SoundService.prototype.play_sound = function(sfx, volume=1, pitch_variation=0) {
-	if (Math.random() < volume) {
-		var sound = sfx.cloneNode();
-		sound.volume = volume;
-		sound.playbackRate = 1 + Math.random() * pitch_variation;
-		sound.play();
-	}
+	this.in_context(ctx => {
+		ctx.globalAlpha = amount;
+		ctx.font = "24px dogicabold";
+		ctx.fillStyle = color;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(text,px,py);
+	});
 };
 
 
@@ -274,7 +167,7 @@ TriColorEntity.prototype.set_image = function(image) {
 	this.sub_buffers = this.create_sub_buffers(image);
 };
 TriColorEntity.prototype.create_sub_buffers = function(image) {
-	return create_color_layer_buffers(image, [this.light_color, this.backing_color, this.shadow_color]);
+	return nlo.image.create_color_layer_buffers(image, [this.light_color, this.backing_color, this.shadow_color]);
 };
 TriColorEntity.prototype.set_light_color = function(color) {
 	this.light_color = color;
@@ -879,10 +772,32 @@ ControlService.prototype.open_game = function() {
 
 
 
+class Point {
+	constructor(x,y) {
+		this.x = x;
+		this.y = y;
+	}
 
+	get dist() { return Math.sqrt(this.x**2 + this.y**2); }
+	get dist_sqr() { return this.x**2 + this.y**2; }
+	get normal() { var d = Math.sqrt(this.x**2 + this.y**2); return new Point(this.x / d, this.y / d); }
+	get angle() { return Math.atan2(this.y, this.x); }
+	delta(other) { return new Point(other.x - this.x, other.y - this.y); }
+	dist_to(other) { return Math.sqrt((this.x - other.x)**2 + (this.y - other.y)**2); }
+	dist_sqr_to(other) { return (this.x - other.x)**2 + (this.y - other.y)**2; }
+	normal_to(other) { var dx = other.x - this.x; var dy = other.y - this.y; var d = Math.sqrt(dx**2 + dy**2); return new Point(dx / d, dy / d); }
+	angle_to(other) { return Math.atan2(other.y - this.y, other.x - this.x); }
+	add(other) { return new Point(other.x + this.x, other.y + this.y); }
+	sub(other) { return new Point(this.x - other.x, this.y - other.y); }
+	mul(n) { return new Point(this.x * n, this.y * n); }
+	div(n) { return new Point(this.x / n, this.y / n); }
+	scale(other) { return new Point(this.x * other.x, this.y * other.y); }
 
-
-
+	static avg(points) { var sx=0, sy=0; for (var p of points) {sx += p.x; sy += p.y; } return new Point(sx / points.length, sy / points.length); }
+	static get rand() { var a = Math.random() * Math.PI * 2; return new Point(Math.cos(a), Math.sin(a)); }
+	static zero = new Point(0,0);
+	static one = new Point(1,1);
+}
 
 
 function main () {
@@ -906,7 +821,7 @@ function main () {
 		game.background_color = '#232836';
 		game.camera = new GameCamera(canvas.width, canvas.height);
 
-		slice_tilesheet(game.images.monochrome_tilemap_packed, 8,8);
+		nlo.image.slice_tilesheet(game.images.monochrome_tilemap_packed, 8,8);
 
 		// initialize all systems
 		game.services.light_service = new LightService();
@@ -936,8 +851,8 @@ function main () {
 		// game.add_entity(new Player(canvas.width / 2, canvas.height / 2));
 
 
-		// game.services.control_service.open_game();
-		game.services.control_service.open_main();
+		game.services.control_service.open_game();
+		// game.services.control_service.open_main();
 
 		game.run_game(ctx, 60);
 	});

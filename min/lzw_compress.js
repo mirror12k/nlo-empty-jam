@@ -11,10 +11,9 @@ var LZW = {
         var i, l;
         for (i = 1, l = data.length; i < l; i++) {
             currChar = data[i];
-            if (dict[phrase + currChar] != null) {
+            if (dict[phrase + currChar]) {
                 phrase += currChar;
-            }
-            else {
+            } else {
                 out.push(phrase.length > 1 ? dict[phrase] : phrase.charCodeAt(0));
                 dict[phrase + currChar] = code;
                 code++;
@@ -39,14 +38,12 @@ var LZW = {
             var currCode = data[i].charCodeAt(0);
             if (currCode < 128) {
                 phrase = data[i];
-            }
-            else {
+            } else {
                 phrase = dict[currCode] ? dict[currCode] : (oldPhrase + currChar);
             }
             out.push(phrase);
             currChar = phrase.charAt(0);
-            dict[code] = oldPhrase + currChar;
-            code++;
+            dict[code++] = oldPhrase + currChar;
             oldPhrase = phrase;
         }
         return out.join("");
@@ -56,6 +53,10 @@ var LZW = {
 
 var fs = require('fs');
 var data = fs.readFileSync(0, 'utf-8');
+
+var enc = LZW.encode(data);
+if (data !== LZW.decode(enc))
+    throw "decompression assertion failed!";
 
 console.log(LZW.encode(data).replace('\\', '\\\\'));
 // console.log(LZW.decode(LZW.encode(data)));

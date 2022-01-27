@@ -18,8 +18,7 @@ var LZW = {
             }
             out.push(phrase);
             currChar = phrase.charAt(0);
-            dict[code] = oldPhrase + currChar;
-            code++;
+            dict[code++] = oldPhrase + currChar;
             oldPhrase = phrase;
         }
         return out.join("");
